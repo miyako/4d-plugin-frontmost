@@ -57,13 +57,18 @@ HWND getMainWindow()
 	{
 		//the window class is the folder name of the application
 		wchar_t path[_MAX_PATH] = {0};
-		wcscpy(path, (const wchar_t *)PA_GetApplicationFullPath().fString);
+		const wchar_t *appPath = (const wchar_t *)PA_GetApplicationFullPath().fString;
+		if(appPath)
+		{
+			wcsncpy(path, appPath, _MAX_PATH - 1);
+			path[_MAX_PATH - 1] = 0;
+		}
 		//remove file name (4D.exe)
-		PathRemoveFileSpec(path);
+		PathRemoveFileSpecW(path);
 		//check instance as well, to be sure
 		HINSTANCE h = (HINSTANCE)PA_Get4DHInstance();
 		do{
-			mdi = FindWindowEx(NULL, mdi, (LPCTSTR)path, NULL);
+			mdi = FindWindowExW(NULL, mdi, path, NULL);
 			if(mdi){
 				if(h == (HINSTANCE)GetWindowLongPtr(mdi, GWLP_HINSTANCE)){
 					break;
