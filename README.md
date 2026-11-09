@@ -15,6 +15,62 @@ this plugin — both commands operate purely on process/window activation state.
 
 **Platforms:** macOS (Carbon/Cocoa builds) and Windows (32-bit/64-bit).
 
+## Manual versioning and publication
+
+**Bump version** and **Build** are independent manual Actions. Neither runs on
+pushes, tags, or pull requests. In the Actions UI, explicitly select the branch
+for Bump version and choose patch, minor, or major. It validates the immutable
+dispatch SHA, a clean checkout, and coordinated source metadata, then commits
+only that metadata to the selected branch. A normal, non-force push disables
+tag following explicitly. A required pre-push hook checks the receive-pack
+advertisement against the exact selected old SHA; advances, ancestor rewinds,
+deletions, and same-result races are rejected, including after the last
+`ls-remote` check. A missing/nonexecutable guard fails closed. No tag or Build
+is triggered. If the branch moves, inspect the failure and dispatch again.
+
+Run **Build** separately on the desired ref; it has **no inputs**. All three
+checkouts use the same immutable `github.sha`. Its strict `X.Y.Z` comes from
+source, not a tag: all six `MARKETING_VERSION` and coordinated
+`CURRENT_PROJECT_VERSION` settings, `Info.plist`'s short version and optional
+bundle version, and both English localized version strings must agree.
+Supported Xcode version-variable references are preserved, as are absent
+optional plist keys. Prebuilt example bundles, `manifest.json`, localization
+revision counters, dependency versions, and 4D/schema metadata are not release
+version authorities.
+
+The old bump header promised project/marketing coordination but its implementation
+only updated marketing settings. This migration normalizes the six stale
+`CURRENT_PROJECT_VERSION` values (`1.0.3`) and English overrides (`1.0`) to
+the existing marketing/plist authority **1.0.5**, without a release-version
+increment. The absent `CFBundleVersion` remains absent.
+
+Build retains Windows x64, macOS arm64+x86_64, the merged bundle, signing,
+both ZIP/DMG notarizations and DMG stapling. Assets remain
+`Frontmost-X.Y.Z.zip` and `Frontmost-X.Y.Z.dmg`. Publication is serialized
+repository-wide across all branches. Before native work and again after all
+native/signing/notary/stapling gates, it checks remote tags and authenticates a
+paginated release listing, including drafts. Any API/auth/network/404/schema
+error, including on later pages, fails closed; only a complete successful
+no-match permits publication.
+
+Publication creates a new lightweight `vX.Y.Z` tag at the selected SHA through
+REST POST (even same-SHA concurrent creation fails), verifies the remote SHA,
+then POSTs a public, non-prerelease release with explicit tag/target/name and
+empty, non-generated notes, matching the original notes policy. Assets are
+uploaded separately to the newly returned release ID, without replacement.
+There is no update-existing, delete, rollback, or automatic retry.
+
+**Failure recovery:** partial state is deliberately retained. A failed release
+POST can leave a tag; an upload failure can leave a public release with zero or
+some assets. A response lost in transit can also mean the server succeeded.
+Inspect the remote tag, release (including drafts), assets and Actions log
+manually before taking action. Do not rerun expecting repair: existing state
+blocks a rerun. Recover manually under repository policy or use a newly bumped
+version; the workflows never remove or overwrite prior publication state.
+
+Local lifecycle checks (no native builds or signing):
+`python3 -m unittest discover -s .github/tests -v`.
+
 ---
 
 ## Requirements & platform notes
