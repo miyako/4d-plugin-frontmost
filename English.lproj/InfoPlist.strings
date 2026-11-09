@@ -1,1 +1,5 @@
-﻿/* Localized versions of Info.plist keys */CFBundleName = "Frontmost";CFBundleShortVersionString = "1.0";CFBundleGetInfoString = "Frontmost version 1.0, Copyright 2017 miyako.";
+﻿/* Localized versions of Info.plist keys */
+
+CFBundleName = "Frontmost";
+CFBundleShortVersionString = "1.0.5";
+CFBundleGetInfoString = "Frontmost version 1.0.5, Copyright 2017 miyako.";
