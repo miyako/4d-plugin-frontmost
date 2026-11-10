@@ -71,6 +71,107 @@ version; the workflows never remove or overwrite prior publication state.
 Local lifecycle checks (no native builds or signing):
 `python3 -m unittest discover -s .github/tests -v`.
 
+## Native ownership regression
+
+The bounded audit at `5db961c1523697688905549f04f4a19281dedf6b` found
+ownership defects in the compiled but dispatcher-dormant `CPicture` helpers.
+`fromFileAtPath` now clears its shallow-transferred path only through the
+argument owner, and releases the output argument after `setPicture` retains
+it. `setBytes` releases its temporary after the same retain. Destinations
+overwritten by shallow string/picture setters start as Undefined rather than
+leaking allocated empty values. The genuinely owning output arguments still
+start as Picture. Synchronous borrowed input detachment and owning picture
+returns are preserved. `createCopy` converts the SDK's returned byte count
+to UTF-16 code units before constructing a string.
+
+**Inventory and reachability:** the tracked native surface consists of
+`4DPlugin.cpp/.h`, `4D Plugin_Prefix.pch`, the bundled SDK
+`4DPluginAPI.c/.h/.def`, `EntryPoints.h`, `Flags.h`, `PrivateTypes.h`,
+`PublicTypes.h`, and all 16 wrapper implementation/header pairs plus
+`Classes/C_TYPES.h`. The wrappers are `ARRAY_BOOLEAN`, `ARRAY_DATE`,
+`ARRAY_INTEGER`, `ARRAY_LONGINT`, `ARRAY_REAL`, `ARRAY_TEXT`, `ARRAY_TIME`,
+`C_BLOB` (including `CBytes`), `C_DATE`, `C_INTEGER`, `C_LONGINT`,
+`C_PICTURE` (including `CPicture`), `C_POINTER`, `C_REAL`, `C_TEXT`, and
+`C_TIME`. Both Visual Studio projects and Xcode's source phase compile all
+these implementations; the umbrella SDK header includes every wrapper.
+`FourDPackex` in the SDK is the exported entry (also named by the Windows
+`.def`), calling `PluginMain` and the real `CommandDispatcher`. Selectors 1
+and 2 implement the two zero-argument manifest commands; only `C_LONGINT`
+is called by them. Windows init also uses SDK application-path/version
+helpers. The source and example-bundle manifests agree; tracked prebuilt
+bundles are not rebuilt or certified by this audit.
+
+**Bundled SDK contracts:** the core file's SHA-256 is
+`cbcab37e636e4fa2ad6793d419280f19261b0bf8cc8c3fe24747ea1a83229d0d`.
+It was placed at its current path in
+`a19686625df8d371f9006d8780d4d8579cc30052`; the v13 header/v14
+implementation comments are not a verified upstream release identity.
+Its bytes also match `frontmost/4D Plugin API/4DPluginAPI.c` in the
+initial repository commit `9d64a99e535d650dd497916f21be2d87403cf24b`,
+not that commit's separate `frontmost/v11` SDK.
+No upstream SDK revision is pinned by a dependency manifest.
+The unchanged implementation shallow-assigns scalar string/picture values,
+allocates empty owners when creating those variable kinds, forwards picture
+retains/releases to the engine, and documents charset conversion lengths
+as bytes. `PA_SetStringInArray` disposes/replaces the old element only for
+Unicode array kind, non-null data, index in `0..fNbElements`, and non-null
+input descriptor. Rejection retains the caller's owner; the getter borrows
+the element. `ARRAY_TEXT` independently copies input and allocates each
+output; no unconditional post-transfer disposal was present.
+Scalar `C_TEXT` uses a content setter, not descriptor transfer.
+Numeric/date/time wrappers and BLOB encoding helpers introduce no additional
+SDK string owner. This SDK has no object/collection getter surface.
+Command handle-allocation failure returns raw kind 0, even though the
+normalizing kind getter labels it as text; method failure is Undefined.
+The CPicture commands used here are procedures, and their returned sentinels
+are not adopted or cleared.
+
+Run the macOS synthetic regression with installed Xcode command-line tools:
+
+```sh
+python3 .github/tests/native/run.py
+```
+
+It directly compiles the **full unchanged bundled SDK**, all production
+wrappers and dispatcher under ASan/UBSan, using only synthetic engine
+fixtures. `NSRunningApplication` is replaced before compilation: no real
+activation, desktop enumeration, application launch, or user files are used.
+The 30-case matrix covers ASCII, BMP, supplementary and empty text; allocated
+and null empties; exact charset byte/unit/capacity/termination boundaries;
+array copying, independent transfer, replacement, shrink, clear and
+rejections; scalar copies; picture retains, handoffs surviving wrapper
+destruction, repeated replacement, command/handle failures, and exported
+dispatcher behavior. Explicit string/picture/handle balances complement
+ASan/UBSan because macOS LSan is unavailable.
+
+To reproduce the before/after comparison, extract an immutable
+`git archive 5db961c1523697688905549f04f4a19281dedf6b` into a temporary
+directory, then run this same final harness:
+
+```sh
+python3 .github/tests/native/run.py --source /path/to/archive \
+  --expect-baseline-failures --preserve-ref 5db961c1523697688905549f04f4a19281dedf6b
+python3 .github/tests/native/run.py \
+  --preserve-ref 5db961c1523697688905549f04f4a19281dedf6b
+```
+
+The baseline fails the named double-disposal, overwritten-empty-owner,
+retained-output/temporary picture-balance, and charset heap-overread
+assertions; the fixed sources pass all cases. Preservation compares every
+pre-existing tracked file, allowing only the intentional `C_PICTURE.cpp`
+and README edits on the fixed side. SDK internals, other wrappers,
+projects/manifests, workflows and bundled binaries remain byte-identical.
+
+**Limits and deferrals:** this is not execution in real 4D or Windows, nor a
+reproduction/certification of the originating Windows Poppler crash.
+`C_POINTER`/`PA_GetPointerValue` metadata and SDK engine-only application-path
+and picture-data output ownership remain ambiguous and unchanged. The shim
+does not adopt picture-data output, and failed outputs are not treated as
+valid owners. Normal array tests do not certify SDK resize-OOM count
+corruption; unrelated allocation-failure hardening and SDK rewrites are
+deferred. No signing, packaging, releases, manual Actions or native project
+builds are required for these checks.
+
 ---
 
 ## Requirements & platform notes
